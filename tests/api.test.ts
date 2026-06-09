@@ -1,62 +1,75 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { getDb } from "../db/database";
 
-describe("daily_log DB logic", () => {
+describe("Daily Tracker DB logic", () => {
+  let projectId: number;
+  let metricId: number;
+  let entryId: number;
+
   afterAll(() => {
-    // Clean up test entries
     const db = getDb();
-    db.prepare("DELETE FROM daily_log WHERE date LIKE '2099-%'").run();
+    if (projectId) {
+      db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
+    }
   });
 
-  it("inserts a valid log entry and retrieves it", () => {
+  it("creates a project and retrieves it", () => {
     const db = getDb();
+    const result = db.prepare(`
+      INSERT INTO projects (name, icon, color) VALUES (?, ?, ?)
+    `).run("Test Gym", "🏋️", "#6366f1");
+
+    projectId = result.lastInsertRowid as number;
+    const project = db.prepare("SELECT * FROM projects WHERE id = ?").get(projectId) as { name: string; icon: string };
+
+    expect(project).toBeTruthy();
+    expect(project.name).toBe("Test Gym");
+    expect(project.icon).toBe("🏋️");
+  });
+
+  it("inserts a metric and logs an entry with a value", () => {
+    const db = getDb();
+
+    const metricResult = db.prepare(`
+      INSERT INTO metrics (project_id, name, unit, type, color) VALUES (?, ?, ?, ?, ?)
+    `).run(projectId, "Sales", "£", "currency", "#6366f1");
+    metricId = metricResult.lastInsertRowid as number;
+
+    const entryResult = db.prepare(`
+      INSERT INTO log_entries (project_id, date, note) VALUES (?, ?, ?)
+    `).run(projectId, "2099-01-01", "Test entry");
+    entryId = entryResult.lastInsertRowid as number;
+
     db.prepare(`
-      INSERT INTO daily_log (date, sector, sales, customers)
-      VALUES (?, 'gym', ?, ?)
-      ON CONFLICT(date) DO UPDATE SET sales = excluded.sales, customers = excluded.customers
-    `).run("2099-01-01", 1500.5, 75);
+      INSERT INTO metric_values (entry_id, metric_id, value) VALUES (?, ?, ?)
+    `).run(entryId, metricId, 1500.5);
 
-    const row = db.prepare("SELECT * FROM daily_log WHERE date = ?").get("2099-01-01") as any;
-    expect(row).toBeTruthy();
-    expect(row.sales).toBe(1500.5);
-    expect(row.customers).toBe(75);
-    expect(row.sector).toBe("gym");
+    const value = db.prepare("SELECT * FROM metric_values WHERE entry_id = ? AND metric_id = ?").get(entryId, metricId) as { value: number };
+    expect(value).toBeTruthy();
+    expect(value.value).toBe(1500.5);
   });
 
-  it("upserts (updates) an existing entry for the same date", () => {
+  it("upserts an entry (same project + date updates existing)", () => {
     const db = getDb();
-    const stmt = db.prepare(`
-      INSERT INTO daily_log (date, sector, sales, customers)
-      VALUES (?, 'gym', ?, ?)
-      ON CONFLICT(date) DO UPDATE SET sales = excluded.sales, customers = excluded.customers
-    `);
-    stmt.run("2099-01-02", 800, 40);
-    stmt.run("2099-01-02", 999, 50);
 
-    const row = db.prepare("SELECT * FROM daily_log WHERE date = ?").get("2099-01-02") as any;
-    expect(row.sales).toBe(999);
-    expect(row.customers).toBe(50);
-  });
-
-  it("GET summary logic returns totals and series", () => {
-    const db = getDb();
-    // Ensure our test rows exist
     db.prepare(`
-      INSERT INTO daily_log (date, sector, sales, customers)
-      VALUES (?, 'gym', ?, ?)
-      ON CONFLICT(date) DO UPDATE SET sales = excluded.sales, customers = excluded.customers
-    `).run("2099-01-03", 600, 30);
+      INSERT INTO log_entries (project_id, date, note)
+      VALUES (?, ?, ?)
+      ON CONFLICT(project_id, date) DO UPDATE SET note = excluded.note
+    `).run(projectId, "2099-01-01", "Updated note");
 
-    const series = db.prepare("SELECT * FROM daily_log ORDER BY date ASC").all() as any[];
-    const totals = series.reduce(
-      (acc: any, row: any) => ({ sales: acc.sales + row.sales, customers: acc.customers + row.customers }),
-      { sales: 0, customers: 0 }
-    );
+    const entry = db.prepare("SELECT * FROM log_entries WHERE project_id = ? AND date = ?").get(projectId, "2099-01-01") as { note: string };
+    expect(entry.note).toBe("Updated note");
+  });
 
-    expect(Array.isArray(series)).toBe(true);
-    expect(series.length).toBeGreaterThanOrEqual(3);
-    expect(typeof totals.sales).toBe("number");
-    expect(typeof totals.customers).toBe("number");
-    expect(totals.sales).toBeGreaterThan(0);
+  it("returns all entries for a project ordered by date", () => {
+    const db = getDb();
+
+    db.prepare(`INSERT INTO log_entries (project_id, date) VALUES (?, ?) ON CONFLICT DO NOTHING`).run(projectId, "2099-01-02");
+    db.prepare(`INSERT INTO log_entries (project_id, date) VALUES (?, ?) ON CONFLICT DO NOTHING`).run(projectId, "2099-01-03");
+
+    const entries = db.prepare("SELECT * FROM log_entries WHERE project_id = ? ORDER BY date ASC").all(projectId) as { date: string }[];
+    expect(entries.length).toBeGreaterThanOrEqual(3);
+    expect(entries[0].date).toBe("2099-01-01");
   });
 });
