@@ -135,8 +135,8 @@ export default function Home() {
             onRefresh={fetchProjects}
             onDelete={() => handleDeleteProject(selectedProject.id)}
             onUpdate={(updated) => {
-              setProjects(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } : p));
-              setSelectedProject(prev => prev?.id === updated.id ? { ...prev, ...updated } : prev);
+              setProjects(prev => prev.map(p => p.id === updated.id ? { ...p, ...updated } as Project : p));
+              setSelectedProject(prev => prev?.id === updated.id ? { ...prev, ...updated } as Project : prev);
             }}
           />
         ) : (
