@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\malik_8w1ubs5\\\\OptiU\" -ErrorAction SilentlyContinue; if \\(-not $?\\) { Get-ChildItem \"$env:USERPROFILE\\\\OptiU\" -ErrorAction SilentlyContinue })",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)"
+    ]
+  }
+}
